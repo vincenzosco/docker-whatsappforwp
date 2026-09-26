@@ -29,7 +29,7 @@ RUN set -eux; \
     echo "${sum}  gowa.zip" | sha256sum -c -; \
     unzip -q gowa.zip -d extracted; \
     ls -l extracted; \
-    binary="$(find extracted -type f -printf '%s %p\\n' | sort -rn | head -n1 | cut -d' ' -f2-)"; \
+    binary="$(find extracted -type f -printf '%s %p\n' | sort -rn | head -n1 | cut -d' ' -f2-)"; \
     echo "GOWA binary: ${binary}"; \
     mv "${binary}" whatsapp; \
     chmod +x whatsapp; \
