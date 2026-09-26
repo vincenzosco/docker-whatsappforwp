@@ -27,8 +27,13 @@ RUN set -eux; \
     curl -fsSL -o gowa.zip \
       "https://github.com/aldinokemal/go-whatsapp-web-multidevice/releases/download/v${GOWA_VERSION}/${file}"; \
     echo "${sum}  gowa.zip" | sha256sum -c -; \
-    unzip -q gowa.zip; \
-    chmod +x whatsapp
+    unzip -q gowa.zip -d extracted; \
+    ls -l extracted; \
+    binary="$(find extracted -type f -printf '%s %p\\n' | sort -rn | head -n1 | cut -d' ' -f2-)"; \
+    echo "GOWA binary: ${binary}"; \
+    mv "${binary}" whatsapp; \
+    chmod +x whatsapp; \
+    ./whatsapp --version || true
 
 # ── stage 2: the runtime ────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
