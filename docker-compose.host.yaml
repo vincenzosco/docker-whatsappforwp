@@ -1,0 +1,24 @@
+# Same container, host networking. Use this on a Linux NAS (Synology, QNAP, a
+# mini PC) when you want the app to find the server by itself: the discovery
+# beacon has to leave the host's own network interface, and only host networking
+# lets it.
+#
+#   docker compose -f docker-compose.host.yaml up -d
+#
+# There is no `ports:` section on purpose: with host networking the container
+# uses the host's ports directly, and Compose rejects the combination.
+services:
+  server:
+    image: ghcr.io/vincenzosco/docker-whatsappforwp:latest
+    # To build it here instead, comment out `image:` and uncomment the next line.
+    # build: .
+    container_name: whatsapp-for-wp8
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - whatsapp-data:/data
+
+volumes:
+  whatsapp-data:

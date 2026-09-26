@@ -1,0 +1,17 @@
+{
+  "name": "whatsapp-gowa-adapter",
+  "version": "2.0.0",
+  "description": "Adapter tra l'app WhatsApp Windows Phone 8.1 e un server GOWA self-hosted (go-whatsapp-web-multidevice)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:debug": "node server.js --debug",
+    "test": "node --test"
+  },
+  "keywords": ["whatsapp", "gowa", "bridge", "wp8", "windows-phone"],
+  "license": "MIT",
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.13.0"
+  }
+}

@@ -1,0 +1,27 @@
+# The default: bridged networking with explicit port mappings, which works on a
+# machine with Docker Desktop and on a NAS.
+#
+# What it cannot do is deliver the UDP discovery broadcast: inside a bridged
+# network the beacon never reaches the phone's subnet, so the app finds nothing
+# by itself and you type the address once (the app remembers it). On a Linux NAS
+# use docker-compose.host.yaml instead and discovery works.
+services:
+  server:
+    image: ghcr.io/vincenzosco/docker-whatsappforwp:latest
+    # To build it here instead, comment out `image:` and uncomment the next line.
+    # build: .
+    container_name: whatsapp-for-wp8
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${BRIDGE_PORT:-8585}:${BRIDGE_PORT:-8585}/tcp"         # the WP8.1 app
+      - "${WEBHOOK_PORT:-8586}:${WEBHOOK_PORT:-8586}/tcp"       # the GOWA webhook
+      - "${DISCOVERY_PORT:-8587}:${DISCOVERY_PORT:-8587}/udp"   # discovery beacon
+    volumes:
+      # storages/ holds the linked WhatsApp session: without it every restart
+      # means scanning the QR code again.
+      - whatsapp-data:/data
+
+volumes:
+  whatsapp-data:
