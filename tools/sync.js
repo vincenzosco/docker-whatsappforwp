@@ -23,18 +23,39 @@ const ROOT = path.resolve(__dirname, '..');
 const SERVER = path.join(ROOT, 'server');
 const COMMIT_FILE = path.join(SERVER, 'SOURCE_COMMIT');
 
-// The files that make up the server. The adapter's own READMEs stay in the app
-// repository: the documentation here is the deployment's.
-const FILES = [
-  'server.js',
-  'config.js',
-  'crypto-helper.js',
-  'discovery.js',
-  'gowa-client.js',
-  'message-format.js',
-  'webhook-server.js',
-  'package.json'
-];
+/**
+ * The files that make up the server: every module the adapter ships, its
+ * package.json, and every test that goes with them. The adapter's own READMEs
+ * stay in the app repository: the documentation here is the deployment's.
+ *
+ * The list is read from the source rather than written down here. A hand-kept
+ * list is how this copy fell behind: `calls.js`, `chats.js` and `ffmpeg.js` were
+ * all missing while the modules and tests around them were present, so the image
+ * answered a `require` with nothing and the tests in this repository failed on a
+ * copy that `--check` called up to date.
+ */
+function adapterFiles(adapterDir) {
+  const files = ['package.json'];
+  for (const name of fs.readdirSync(adapterDir).sort()) {
+    if (name.endsWith('.js')) files.push(name);
+  }
+  return files;
+}
+
+/** The same shape, read from server/: used to catch a file left behind. */
+function serverFiles() {
+  const files = ['package.json'];
+  for (const name of fs.readdirSync(SERVER).sort()) {
+    if (name.endsWith('.js')) files.push(name);
+  }
+  const tests = path.join(SERVER, 'test');
+  if (fs.existsSync(tests)) {
+    for (const name of fs.readdirSync(tests).sort()) {
+      if (name.endsWith('.test.js')) files.push(path.join('test', name));
+    }
+  }
+  return files;
+}
 
 function parseArgs(argv) {
   const options = { check: false, from: '' };
@@ -51,7 +72,7 @@ function sha256(buffer) {
 
 /** The paths, relative to server/, the copy must contain. */
 function wantedFiles(adapterDir) {
-  const files = FILES.slice();
+  const files = adapterFiles(adapterDir);
   const tests = path.join(adapterDir, 'test');
   for (const name of fs.readdirSync(tests).sort()) {
     if (name.endsWith('.test.js')) files.push(path.join('test', name));
@@ -98,12 +119,13 @@ function main() {
   }
 
   if (options.check) {
-    // And the other direction: a file in server/ the source no longer has is
-    // drift too.
-    for (const rel of FILES) {
-      if (!fs.existsSync(path.join(SERVER, rel))) stale.push(rel);
+    // And the other direction: a file left in server/ that the source no longer
+    // has is drift too - it would ship code nobody asked for.
+    const wanted = new Set(files);
+    for (const rel of serverFiles()) {
+      if (!wanted.has(rel)) stale.push(rel);
     }
-    if (stale.length) problems.push('in server/ but not in the source list: ' + stale.join(', '));
+    if (stale.length) problems.push('in server/ and not in the source: ' + stale.join(', '));
 
     if (problems.length) {
       console.log(problems.join('\n'));

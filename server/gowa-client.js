@@ -14,6 +14,26 @@ function buildAuthHeader(user, pass) {
   return 'Basic ' + Buffer.from(`${user}:${pass || ''}`, 'utf8').toString('base64');
 }
 
+// Il nome di un gruppo come lo restituisce GOWA.
+//
+// whatsmeow's types.GroupInfo non ha tag json e incorpora GroupName, e
+// encoding/json promuove i campi di una struct incorporata: il nome arriva
+// quindi come "Name" di primo livello. Si accettano anche le forme annidate
+// perche' questo e' l'unico punto in cui il nome entra, e un cambio di forma a
+// monte non deve svuotare i nomi dei gruppi.
+function groupName(group) {
+  if (!group) return '';
+  const candidates = [group.Name, group.name];
+  const nested = group.GroupName || group.group_name;
+  if (nested) {
+    candidates.push(nested.Name, nested.name);
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
+}
+
 class GowaClient {
   constructor({ baseUrl, deviceId, user, pass, fetchImpl } = {}) {
     this.baseUrl = String(baseUrl || '').replace(/\/+$/, '');
@@ -99,20 +119,40 @@ class GowaClient {
     return (r.data.results || {}).message_id || '';
   }
 
-  async sendImage(phone, caption, buffer, mimeType, fileName) {
+  /**
+   * Un file verso GOWA. Le tre rotte differiscono solo per il nome del campo
+   * multipart e per il percorso: prima ce n'era una sola (sendImage), e un
+   * video finiva spedito come immagine.
+   */
+  async postMedia(path, field, phone, caption, buffer, mimeType, fileName) {
     const form = new FormData();
     form.append('phone', phone);
     if (caption) form.append('caption', caption);
-    form.append('image', new Blob([buffer], { type: mimeType || 'image/jpeg' }), fileName || 'image.jpg');
+    form.append(field, new Blob([buffer], { type: mimeType }), fileName || field);
 
-    const res = await this.fetch(`${this.baseUrl}/send/image`, {
+    const res = await this.fetch(`${this.baseUrl}${path}`, {
       method: 'POST', headers: this.headers(), body: form
     });
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
-    if (!res.ok) throw new Error(errorMessage(data, 'sending the image failed'));
+    if (!res.ok) throw new Error(errorMessage(data, `sending the ${field} failed`));
     return (data.results || {}).message_id || '';
+  }
+
+  async sendImage(phone, caption, buffer, mimeType, fileName) {
+    return this.postMedia('/send/image', 'image', phone, caption, buffer,
+      mimeType || 'image/jpeg', fileName || 'image.jpg');
+  }
+
+  async sendVideo(phone, caption, buffer, mimeType, fileName) {
+    return this.postMedia('/send/video', 'video', phone, caption, buffer,
+      mimeType || 'video/mp4', fileName || 'video.mp4');
+  }
+
+  async sendFile(phone, caption, buffer, mimeType, fileName) {
+    return this.postMedia('/send/file', 'file', phone, caption, buffer,
+      mimeType || 'application/octet-stream', fileName || 'file');
   }
 
   async fetchBinary(urlOrPath) {
@@ -130,6 +170,113 @@ class GowaClient {
     const r = await this.request('GET', '/user/my/contacts');
     const data = (r.data && r.data.results && r.data.results.data) || [];
     return data.map((c) => ({ jid: c.jid, name: c.name || '' }));
+  }
+
+  // I gruppi a cui l'account partecipa, con il nome vero.
+  //
+  // Serve perche' l'elenco chat non e' una fonte affidabile per i nomi dei
+  // gruppi: quando GOWA non ha un nome in storage risponde "Group <numero>"
+  // (vedi chat_display_name.go nel sorgente di GOWA), che e' il numero e non il
+  // nome. Una richiesta sola per tutti i gruppi, e 500 gruppi sono il tetto che
+  // impone WhatsApp.
+  async myGroups() {
+    const names = new Map();
+    try {
+      const r = await this.request('GET', '/user/my/groups');
+      const data = (r.data && r.data.results && r.data.results.data) || [];
+      if (!r.ok || !Array.isArray(data)) return names;
+
+      for (const group of data) {
+        const jid = group && (group.JID || group.jid);
+        const name = groupName(group);
+        if (jid && name) names.set(String(jid), name);
+      }
+    } catch (err) {
+      return names;
+    }
+    return names;
+  }
+
+  // Elenco delle chat presenti nella storage di GOWA (paginato lato server).
+  async chats(limit) {
+    const r = await this.request('GET', `/chats?limit=${encodeURIComponent(limit)}`);
+    const res = (r.data && r.data.results) || {};
+    return Array.isArray(res.data) ? res.data : [];
+  }
+
+  // Messaggi di una chat. La rotta di GOWA e' /chat/:chat_jid/messages.
+  async chatMessages(jid, limit) {
+    const r = await this.request('GET',
+      `/chat/${encodeURIComponent(jid)}/messages?limit=${encodeURIComponent(limit)}`);
+    const res = (r.data && r.data.results) || {};
+    return Array.isArray(res.data) ? res.data : [];
+  }
+
+  // Immagine del profilo di una persona.
+  //
+  // Due richieste, non una: /user/avatar non restituisce l'immagine, restituisce
+  // l'indirizzo dove sta (results.url, un URL del CDN di WhatsApp), quindi i byte
+  // si scaricano dopo. Prima si prendeva il corpo di /user/avatar come se fosse
+  // l'immagine: arrivavano i byte del JSON, che non sono una bitmap, e ogni
+  // avatar veniva scartato in silenzio.
+  //
+  // GOWA risponde 404 quando l'immagine non c'e': per l'elenco chat e' "nessuna
+  // immagine", non un errore da propagare.
+  //
+  // Si chiede per qualunque JID, gruppo compreso. Il parametro si chiama `phone`
+  // ma e' un JID: dal lato GOWA `SanitizePhone` aggiunge un suffisso solo a un
+  // valore che non contiene '@', e poi `client.GetProfilePictureInfo` riceve il
+  // JID come e' - whatsmeow lo accetta per un gruppo come per una persona. Il
+  // suffisso del dispositivo (:12) invece non e' un JID che WhatsApp riconosce
+  // in una richiesta di profilo, quindi si toglie.
+  async avatar(jid) {
+    const value = String(jid || '');
+    if (!value || value.indexOf('@') < 0) return null;
+
+    // Il suffisso del dispositivo sta prima della chiocciola (utente:12@server):
+    // si toglie da li', non tagliando la stringa sul primo ':'.
+    const at = value.indexOf('@');
+    const target = value.slice(0, at).split(':')[0] + value.slice(at);
+    try {
+      const r = await this.request('GET',
+        `/user/avatar?phone=${encodeURIComponent(target)}&is_preview=true`);
+      const url = (r.data && r.data.results && r.data.results.url) || '';
+      if (!r.ok || !url) return null;
+
+      const picture = await this.fetchBinary(url);
+      return picture.buffer.length > 0 ? picture.buffer.toString('base64') : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // I byte del media di un messaggio.
+  //
+  // Due richieste, come per l'avatar: /message/:id/download non restituisce i
+  // byte, restituisce l'indirizzo statico del file scaricato (results.file_url),
+  // e i byte si prendono dopo. Un file_url vuoto significa che il file non e'
+  // sotto statics: per l'app e' "non piu' disponibile", non un guasto.
+  async downloadMedia(phone, messageId) {
+    if (!phone || !messageId) return null;
+
+    try {
+      const r = await this.request('GET',
+        `/message/${encodeURIComponent(messageId)}/download?phone=${encodeURIComponent(phone)}`);
+      const res = (r.data && r.data.results) || {};
+      const url = res.file_url || '';
+      if (!r.ok || !url) return null;
+
+      const media = await this.fetchBinary(url);
+      if (!media.buffer || media.buffer.length === 0) return null;
+
+      return {
+        base64: media.buffer.toString('base64'),
+        mimeType: media.contentType || res.media_type || '',
+        fileName: res.filename || null
+      };
+    } catch (err) {
+      return null;
+    }
   }
 
   async setDeviceWebhook(url) {

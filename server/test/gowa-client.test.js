@@ -3,6 +3,36 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { GowaClient, errorMessage } = require('../gowa-client');
 
+test('chats() asks for a bounded list and reads results.data', async () => {
+  const seen = [];
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async (url) => {
+      seen.push(url);
+      return { ok: true, status: 200, text: async () => JSON.stringify({ results: { data: [{ jid: 'a@s.whatsapp.net' }] } }) };
+    }
+  });
+
+  const chats = await client.chats(25);
+  assert.strictEqual(seen[0], 'http://127.0.0.1:3000/chats?limit=25');
+  assert.strictEqual(chats.length, 1);
+  assert.strictEqual(chats[0].jid, 'a@s.whatsapp.net');
+});
+
+test('chatMessages() encodes the jid in the path', async () => {
+  const seen = [];
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async (url) => {
+      seen.push(url);
+      return { ok: true, status: 200, text: async () => JSON.stringify({ results: { data: [] } }) };
+    }
+  });
+
+  await client.chatMessages('393401234567@s.whatsapp.net', 100);
+  assert.strictEqual(seen[0], 'http://127.0.0.1:3000/chat/393401234567%40s.whatsapp.net/messages?limit=100');
+});
+
 function jsonResponse(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -93,4 +123,198 @@ test('aggiunge gli header di autenticazione e X-Device-Id', async () => {
   const headers = fetchImpl.calls[0].options.headers;
   assert.strictEqual(headers.Authorization, 'Basic ' + Buffer.from('admin:secret').toString('base64'));
   assert.strictEqual(headers['X-Device-Id'], 'd1');
+});
+
+test('avatar() follows the picture URL GOWA returns, then downloads it', async () => {
+  const seen = [];
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async (url) => {
+      seen.push(url);
+      if (seen.length === 1) {
+        // /user/avatar non restituisce l'immagine: restituisce l'indirizzo
+        // dove sta. Il secondo giro scarica davvero i byte.
+        return jsonResponse({
+          status: 200,
+          results: { url: 'https://pps.whatsapp.net/v/t1/abc.jpg', id: 'abc', type: 'image' }
+        });
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'image/jpeg' },
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer
+      };
+    }
+  });
+
+  const picture = await client.avatar('393401234567@s.whatsapp.net');
+
+  assert.strictEqual(seen[0], 'http://127.0.0.1:3000/user/avatar?phone=393401234567%40s.whatsapp.net&is_preview=true');
+  assert.strictEqual(seen[1], 'https://pps.whatsapp.net/v/t1/abc.jpg');
+  assert.strictEqual(picture, Buffer.from([1, 2, 3]).toString('base64'));
+});
+
+test('avatar() asks with the whole JID, so a group JID is a JID', async () => {
+  const seen = [];
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async (url) => {
+      seen.push(url);
+      if (seen.length === 1) {
+        return jsonResponse({ status: 200, results: { url: 'https://pps.whatsapp.net/v/t1/g.jpg' } });
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'image/jpeg' },
+        arrayBuffer: async () => new Uint8Array([7, 8, 9]).buffer
+      };
+    }
+  });
+
+  const picture = await client.avatar('123456789012345678@g.us');
+
+  // Il valore intero, non le sole cifre: GOWA aggiunge un suffisso solo a un
+  // valore che non contiene '@', quindi un JID di gruppo passato intero resta
+  // un JID di gruppo, e GetProfilePictureInfo accetta qualunque JID.
+  assert.strictEqual(seen[0],
+    'http://127.0.0.1:3000/user/avatar?phone=123456789012345678%40g.us&is_preview=true');
+  assert.strictEqual(picture, Buffer.from([7, 8, 9]).toString('base64'));
+});
+
+test('avatar() drops a device suffix, and answers null when there is no picture', async () => {
+  const seen = [];
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async (url) => {
+      seen.push(url);
+      return jsonResponse({}, 404);
+    }
+  });
+
+  // Un JID con il suffisso del dispositivo (:12) non e' il JID che WhatsApp
+  // riconosce in una richiesta di profilo.
+  assert.strictEqual(await client.avatar('393401234567:12@s.whatsapp.net'), null);
+  assert.strictEqual(seen[0],
+    'http://127.0.0.1:3000/user/avatar?phone=393401234567%40s.whatsapp.net&is_preview=true');
+
+  // Nessuna immagine: GOWA risponde con un errore e non c'e' niente da
+  // scaricare, quindi una sola richiesta.
+  assert.strictEqual(await client.avatar('393401234567@s.whatsapp.net'), null);
+  assert.strictEqual(seen.length, 2);
+});
+
+test('myGroups() maps every joined group to its real name', async () => {
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async (url) => {
+      assert.strictEqual(url, 'http://127.0.0.1:3000/user/my/groups');
+      // whatsmeow's GroupInfo non ha tag json e incorpora GroupName: encoding/json
+      // promuove i campi, quindi il nome arriva come "Name" di primo livello.
+      return jsonResponse({
+        results: {
+          data: [
+            { JID: '111@g.us', Name: 'Amici', GroupTopic: { Topic: 'x' } },
+            { JID: '222@g.us', GroupName: { Name: 'Lavoro' } },
+            { JID: '333@g.us', Name: '   ' }
+          ]
+        }
+      });
+    }
+  });
+
+  const names = await client.myGroups();
+
+  assert.strictEqual(names.get('111@g.us'), 'Amici');
+  assert.strictEqual(names.get('222@g.us'), 'Lavoro');
+  assert.strictEqual(names.has('333@g.us'), false);
+  assert.strictEqual(names.size, 2);
+});
+
+test('myGroups() is empty, not fatal, when GOWA cannot answer', async () => {
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async () => jsonResponse({}, 500)
+  });
+
+  const names = await client.myGroups();
+
+  assert.strictEqual(names.size, 0);
+});
+
+test('avatar() returns null when the picture URL does not download', async () => {
+  let calls = 0;
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async () => {
+      calls++;
+      if (calls === 1) {
+        return jsonResponse({ status: 200, results: { url: 'https://pps.whatsapp.net/gone.jpg' } });
+      }
+      return { ok: false, status: 410, headers: { get: () => null } };
+    }
+  });
+
+  assert.strictEqual(await client.avatar('393401234567@s.whatsapp.net'), null);
+});
+
+test('sendVideo posts the video field, and sendFile the file field', async () => {
+  const seen = [];
+  const client = new GowaClient({
+    baseUrl: 'http://g',
+    fetchImpl: async (url, options) => {
+      seen.push({ url, field: [...options.body.keys()].join(',') });
+      return jsonResponse({ status: 200, results: { message_id: 'V1' } });
+    }
+  });
+
+  assert.strictEqual(await client.sendVideo('39@s.whatsapp.net', 'guarda', Buffer.from([1]), 'video/mp4', 'clip.mp4'), 'V1');
+  assert.strictEqual(await client.sendFile('39@s.whatsapp.net', '', Buffer.from([2]), 'application/pdf', 'doc.pdf'), 'V1');
+
+  assert.strictEqual(seen[0].url, 'http://g/send/video');
+  assert.ok(seen[0].field.includes('video'));
+  assert.ok(seen[0].field.includes('phone'));
+  assert.ok(seen[0].field.includes('caption'));
+  assert.strictEqual(seen[1].url, 'http://g/send/file');
+  assert.ok(seen[1].field.includes('file'));
+});
+
+test('downloadMedia va sulla rotta del messaggio e segue il file_url', async () => {
+  const seen = [];
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async (url) => {
+      seen.push(url);
+      if (seen.length === 1) {
+        return jsonResponse({
+          status: 200,
+          results: { message_id: 'M9', file_url: 'http://127.0.0.1:3000/statics/abc.jpg', filename: 'foto.jpg', media_type: 'image' }
+        });
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'image/jpeg' },
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer
+      };
+    }
+  });
+
+  const media = await client.downloadMedia('393401234567@s.whatsapp.net', 'M9');
+
+  assert.strictEqual(seen[0], 'http://127.0.0.1:3000/message/M9/download?phone=393401234567%40s.whatsapp.net');
+  assert.strictEqual(seen[1], 'http://127.0.0.1:3000/statics/abc.jpg');
+  assert.strictEqual(media.base64, Buffer.from([1, 2, 3]).toString('base64'));
+  assert.strictEqual(media.mimeType, 'image/jpeg');
+  assert.strictEqual(media.fileName, 'foto.jpg');
+});
+
+test('downloadMedia non e fatale quando il file non c e piu', async () => {
+  const client = new GowaClient({
+    baseUrl: 'http://127.0.0.1:3000',
+    fetchImpl: async () => jsonResponse({ status: 200, results: { message_id: 'M9' } })
+  });
+
+  assert.strictEqual(await client.downloadMedia('a@s.whatsapp.net', 'M9'), null);
 });

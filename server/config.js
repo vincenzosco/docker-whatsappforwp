@@ -20,7 +20,15 @@ const DEFAULTS = {
   POLL_INTERVAL_MS: '5000',
   DISCOVERY_PORT: '8587',
   DISCOVERY_ENABLED: 'on',
-  DISCOVERY_NAME: ''
+  DISCOVERY_NAME: '',
+  CALLS_CHAT_LIMIT: '25',
+  CALLS_MESSAGES_PER_CHAT: '100',
+  CALLS_LIMIT: '50',
+  CHATS_LIMIT: '25',
+  CHATS_AVATARS: 'on',
+  MESSAGES_LIMIT: '50',
+  FFMPEG_ENABLED: 'on',
+  FFMPEG_PATH: ''
 };
 
 function pick(env, key) {
@@ -57,6 +65,31 @@ function loadConfig(env = process.env) {
       port: parseInt(pick(env, 'DISCOVERY_PORT'), 10),
       // Nome che l'app mostra nella lista dei server trovati.
       name: pick(env, 'DISCOVERY_NAME') || os.hostname()
+    },
+    calls: {
+      // Quante chat scansionare e quanti messaggi per chat: la scansione fa
+      // una richiesta HTTP per chat, quindi il limite e' la durata.
+      chatLimit: parseInt(pick(env, 'CALLS_CHAT_LIMIT'), 10),
+      messagesPerChat: parseInt(pick(env, 'CALLS_MESSAGES_PER_CHAT'), 10),
+      limit: parseInt(pick(env, 'CALLS_LIMIT'), 10)
+    },
+    chats: {
+      // Quante conversazioni elencare. Gli avatar costano una richiesta HTTP
+      // per chat (gruppi compresi), e si possono spegnere.
+      limit: parseInt(pick(env, 'CHATS_LIMIT'), 10),
+      avatars: pick(env, 'CHATS_AVATARS').toLowerCase() !== 'off'
+    },
+    messages: {
+      // Quanti messaggi caricare aprendo una chat. Una sola lettura, ma la
+      // risposta e' un frame per messaggio: il limite e' quanti frame passano,
+      // non quanto dura la lettura.
+      limit: parseInt(pick(env, 'MESSAGES_LIMIT'), 10)
+    },
+    ffmpeg: {
+      // La conversione e' opzionale: senza ffmpeg l'app riceve l'audio
+      // originale e non lo sa leggere, quindi il vocale resta muto.
+      enabled: pick(env, 'FFMPEG_ENABLED').toLowerCase() !== 'off',
+      path: pick(env, 'FFMPEG_PATH') || 'ffmpeg'
     }
   };
 }
