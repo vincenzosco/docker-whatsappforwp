@@ -47,6 +47,15 @@ LABEL org.opencontainers.image.title="whatsapp-for-wp8-server" \
 # volume that keeps the linked WhatsApp session across restarts.
 WORKDIR /data
 
+# The adapter's only external program. A received voice note is Ogg with the
+# Opus codec and WP8.1 has no Opus decoder (Opus arrived with Windows 10), so
+# the adapter converts it to a small mono MP3 before sending it to the app.
+# Without ffmpeg the voice note still arrives but cannot play; the image ships
+# it so that it does, with no step on the host.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY --from=gowa /gowa/whatsapp /usr/local/bin/whatsapp
 # The adapter has no dependencies: its source is copied, nothing is installed.
 COPY server/ /opt/adapter/

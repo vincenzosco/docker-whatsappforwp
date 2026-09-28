@@ -66,6 +66,12 @@ Everything is read from `.env` (see `.env.example` for the full list):
 | `WEBHOOK_PORT`, `WEBHOOK_PATH` | `8586`, `/webhook` | If you need different ones. Both GOWA and the adapter are in this container, so the public URL stays on loopback. |
 | `WEBHOOK_SECRET` | empty | To match a `--webhook-secret` set on GOWA. |
 | `POLL_INTERVAL_MS` | `5000` | To poll WhatsApp's status more or less often. |
+| `CHATS_LIMIT` | `25` | To load fewer or more conversations in the app. |
+| `CHATS_AVATARS` | `on` | Set `off` to skip the one request per chat that downloads profile pictures, groups included. |
+| `MESSAGES_LIMIT` | `50` | To load fewer or more messages when opening a chat. |
+| `CALLS_CHAT_LIMIT`, `CALLS_MESSAGES_PER_CHAT`, `CALLS_LIMIT` | `25`, `100`, `50` | To make the call-history scan read more or fewer chats, messages and records. It costs one request per chat. |
+| `FFMPEG_ENABLED` | `on` | Keep it on: a voice note arrives as Ogg/Opus and WP8.1 cannot decode Opus, so the image converts it to MP3. `off` sends the original bytes, which the phone cannot play. |
+| `FFMPEG_PATH` | `ffmpeg` | Only if you replaced the ffmpeg in the image with a build kept elsewhere. |
 
 The one variable people get wrong is `BRIDGE_KEY`: it must equal the passphrase
 compiled into the app. If you never rebuilt the app, do not touch it.
@@ -95,6 +101,9 @@ unzip whatsapp_9.5.0_linux_amd64.zip
 cd server
 GOWA_URL=http://127.0.0.1:3000 node server.js
 ```
+
+On a bare host, install `ffmpeg` from your package manager as well, or voice
+notes arrive and cannot play. The image already has it.
 
 On Linux everything above is the same with `linux_arm64` on a 64-bit ARM box
 (many NAS boxes) and `linux_armv7` on a 32-bit one.
@@ -137,9 +146,10 @@ That deletes the session, and the next start asks for a new QR code.
 Two stages. The first downloads the pinned GOWA release archive for the target
 architecture and verifies its SHA-256 - the same digests `tools/download.js` in
 the app repository uses. The second is `node:bookworm-slim` with that binary, the
-adapter's source (no `npm install`: it has no dependencies) and
-`docker/entrypoint.sh`, which starts both processes, keeps GOWA on loopback and
-stops everything if either one dies.
+adapter's source (no `npm install`: it has no dependencies), `ffmpeg` - the
+adapter's only external program, which turns a received voice note into an MP3 -
+and `docker/entrypoint.sh`, which starts both processes, keeps GOWA on loopback
+and stops everything if either one dies.
 
 `server/` is filled by `tools/sync.js` from a checkout of the app repository, and
 `server/SOURCE_COMMIT` records which commit it came from:

@@ -67,6 +67,12 @@ Tutto si legge da `.env` (l'elenco completo e' in `.env.example`):
 | `WEBHOOK_PORT`, `WEBHOOK_PATH` | `8586`, `/webhook` | Se ti servono diversi. GOWA e l'adapter sono nello stesso container, quindi l'URL pubblico resta su loopback. |
 | `WEBHOOK_SECRET` | vuota | Per combaciare con un `--webhook-secret` impostato su GOWA. |
 | `POLL_INTERVAL_MS` | `5000` | Per interrogare lo stato WhatsApp piu' o meno spesso. |
+| `CHATS_LIMIT` | `25` | Per caricare meno o piu' conversazioni nell'app. |
+| `CHATS_AVATARS` | `on` | Metti `off` per saltare la richiesta per chat che scarica le immagini del profilo, gruppi compresi. |
+| `MESSAGES_LIMIT` | `50` | Per caricare meno o piu' messaggi aprendo una chat. |
+| `CALLS_CHAT_LIMIT`, `CALLS_MESSAGES_PER_CHAT`, `CALLS_LIMIT` | `25`, `100`, `50` | Per far leggere alla scansione delle chiamate piu' o meno chat, messaggi e voci. Costa una richiesta per chat. |
+| `FFMPEG_ENABLED` | `on` | Lascialo attivo: un vocale arriva come Ogg/Opus e WP8.1 non decodifica Opus, quindi l'immagine lo converte in MP3. `off` manda i byte originali, che il telefono non sa leggere. |
+| `FFMPEG_PATH` | `ffmpeg` | Solo se hai sostituito l'ffmpeg dell'immagine con una build tenuta altrove. |
 
 L'unica variabile che si sbaglia e' `BRIDGE_KEY`: deve essere uguale alla
 passphrase compilata nell'app. Se non hai mai ricompilato l'app, non toccarla.
@@ -97,6 +103,9 @@ unzip whatsapp_9.5.0_linux_amd64.zip
 cd server
 GOWA_URL=http://127.0.0.1:3000 node server.js
 ```
+
+Su un host nudo installa anche `ffmpeg` dal gestore di pacchetti, altrimenti i
+vocali arrivano e non si possono riprodurre. L'immagine ce l'ha gia'.
 
 Su Linux tutto quanto sopra e' identico con `linux_arm64` su una macchina ARM a
 64 bit (molti NAS) e `linux_armv7` su una a 32 bit.
@@ -140,8 +149,9 @@ Due stadi. Il primo scarica l'archivio della release GOWA bloccata per
 l'architettura di destinazione e ne verifica lo SHA-256 - gli stessi digest che usa
 `tools/download.js` nel repository dell'app. Il secondo e' `node:bookworm-slim`
 con quel binario, il sorgente dell'adapter (nessun `npm install`: non ha
-dipendenze) e `docker/entrypoint.sh`, che avvia i due processi, tiene GOWA su
-loopback e ferma tutto se uno dei due muore.
+dipendenze), `ffmpeg` - l'unico programma esterno dell'adapter, che trasforma un
+vocale ricevuto in un MP3 - e `docker/entrypoint.sh`, che avvia i due processi,
+tiene GOWA su loopback e ferma tutto se uno dei due muore.
 
 `server/` viene riempita da `tools/sync.js` a partire da un checkout del repository
 dell'app, e `server/SOURCE_COMMIT` annota da quale commit arriva:
