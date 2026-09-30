@@ -1,0 +1,21 @@
+# Added on top of docker-compose.yaml for a NAS behind a bore tunnel.
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.nas.yaml up -d
+#
+# bore.pub assigns the tunnel a new random port every restart, so the phone
+# cannot be told the address once and for all: the whatsappforwp-endpoint
+# repository holds the current one, and publish.js rewrites it.
+services:
+  bore:
+    image: ekzhang/bore:latest
+    container_name: whatsapp-bore
+    restart: unless-stopped
+    # Host networking is required: bore has to reach the adapter on the NAS
+    # itself, and a bridge would put it on another network.
+    network_mode: host
+    # `local` forwards a port on the bore server back to this machine. With
+    # host networking that machine is the NAS, so the adapter's published port
+    # is what it points at.
+    command: local ${BRIDGE_PORT:-8585} --to bore.pub
+    depends_on:
+      - server
