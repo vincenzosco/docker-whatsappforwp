@@ -165,6 +165,67 @@ A successful build publishes to GHCR as
 `ghcr.io/vincenzosco/docker-whatsappforwp:latest` (plus `:sha-...` and
 `:app-<commit>`).
 
+## Encryption at rest
+
+GOWA keeps the linked WhatsApp session as files, and the adapter keeps the
+token hashes in `users.json`. Neither can encrypt itself, so the honest answer
+is a full-volume encryption on the host, and the files stay plain inside the
+container:
+
+```bash
+# one time
+fallocate -l 4G /var/lib/whatsapp.luks
+cryptsetup luksFormat /var/lib/whatsapp.luks
+cryptsetup open /var/lib/whatsapp.luks whatsapp-data
+mkfs.ext4 /dev/mapper/whatsapp-data
+mount /dev/mapper/whatsapp-data /var/lib/whatsapp-data
+
+# every boot, before docker compose up
+cryptsetup open /var/lib/whatsapp.luks whatsapp-data
+mount /dev/mapper/whatsapp-data /var/lib/whatsapp-data
+
+DATA_DIR=/var/lib/whatsapp-data docker compose \
+  -f docker-compose.yaml -f docker-compose.secure.yaml up -d
+```
+
+`docker-compose.secure.yaml` is commented with the same commands. The tokens
+are already stored only as scrypt hashes, so the volume encryption protects the
+WhatsApp session itself, which is the part that cannot be re-derived.
+
+## Migration without pairing again
+
+The session and the user tokens are what make a container *that* container.
+Moving them to another machine is one export and one restore; the phone does
+not scan the QR code again:
+
+```bash
+# old machine
+node tools/backup.js export whatsapp-backup.tar
+
+# new machine: same .env, then
+node tools/backup.js restore whatsapp-backup.tar
+docker compose up -d
+```
+
+The archive holds `/data/storages` (the session) and `/data/users.json` (the
+token hashes). It is built by the container, so it does not matter where Docker
+keeps the volume. Stop the container before a restore: unpacking files under a
+live process is asking for trouble.
+
+## Sharing the server
+
+One container can host more than one account: every user gets a GOWA device of
+their own, created on the first handshake, and the token is what decides which
+one is theirs. Set `AUTH_REQUIRED=on` and give each phone its token
+(`docker exec whatsapp-for-wp8 node /opt/adapter/create-user.js <name>`); with
+the switch off, nothing changes and the instance stays private.
+
+Two things stay true and are worth saying: the operator can technically reach
+the sessions on the machine, so the token separates users, not the operator's
+access; and the transport is encrypted by the app-level cipher with the
+passphrase compiled into the app, which is what protects the traffic on a
+public tunnel.
+
 ## Disclosure
 
 This is an unofficial client. It is not affiliated with, endorsed by or connected

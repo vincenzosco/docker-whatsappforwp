@@ -1,0 +1,40 @@
+# Encryption at rest, done on the host.
+#
+# GOWA keeps the linked WhatsApp session as files under storages/, and the
+# adapter keeps the token hashes in users.json. Neither can encrypt itself, so
+# the honest answer is a full-volume encryption on the host: the files stay
+# plain inside the container, and the disk they sit on does not.
+#
+# One time, on the host (Linux; LUKS is in every distribution's cryptsetup):
+#
+#   fallocate -l 4G /var/lib/whatsapp.luks
+#   cryptsetup luksFormat /var/lib/whatsapp.luks
+#   cryptsetup open /var/lib/whatsapp.luks whatsapp-data
+#   mkfs.ext4 /dev/mapper/whatsapp-data
+#   mkdir -p /var/lib/whatsapp-data
+#   mount /dev/mapper/whatsapp-data /var/lib/whatsapp-data
+#   chmod 700 /var/lib/whatsapp-data
+#
+# Every boot, before `docker compose up`:
+#
+#   cryptsetup open /var/lib/whatsapp.luks whatsapp-data
+#   mount /dev/mapper/whatsapp-data /var/lib/whatsapp-data
+#
+# Then run with both files:
+#
+#   DATA_DIR=/var/lib/whatsapp-data docker compose \
+#     -f docker-compose.yaml -f docker-compose.secure.yaml up -d
+#
+# The volume list of a service is merged by mount path, so this replaces the
+# named volume at /data with the encrypted directory. Leave DATA_DIR unset and
+# it falls back to ./data, which is convenient for a test and is not encrypted:
+# a directory on the same disk is not encryption at rest, only a change of path.
+#
+# The same file also backs the migration: copy the archive made by
+# `tools/backup.js export` onto the new machine and `restore` it there, and the
+# session is the same one - the phone is not asked to scan again.
+
+services:
+  server:
+    volumes:
+      - ${DATA_DIR:-./data}:/data

@@ -166,6 +166,67 @@ lancia `--check` e ferma la build se la copia non combacia piu'. Una build riusc
 pubblica su GHCR come `ghcr.io/vincenzosco/docker-whatsappforwp:latest` (piu'
 `:sha-...` e `:app-<commit>`).
 
+## Cifratura a riposo
+
+GOWA tiene la sessione WhatsApp collegata come file, e l'adapter tiene gli hash
+dei token in `users.json`. Nessuno dei due sa cifrarsi da solo, quindi la
+risposta onesta e' la cifratura dell'intero volume sull'host, mentre i file
+restano in chiaro dentro il container:
+
+```bash
+# una volta sola
+fallocate -l 4G /var/lib/whatsapp.luks
+cryptsetup luksFormat /var/lib/whatsapp.luks
+cryptsetup open /var/lib/whatsapp.luks whatsapp-data
+mkfs.ext4 /dev/mapper/whatsapp-data
+mount /dev/mapper/whatsapp-data /var/lib/whatsapp-data
+
+# a ogni avvio, prima di docker compose up
+cryptsetup open /var/lib/whatsapp.luks whatsapp-data
+mount /dev/mapper/whatsapp-data /var/lib/whatsapp-data
+
+DATA_DIR=/var/lib/whatsapp-data docker compose \
+  -f docker-compose.yaml -f docker-compose.secure.yaml up -d
+```
+
+`docker-compose.secure.yaml` ha gli stessi comandi nei commenti. I token sono
+gia' salvati solo come hash scrypt, quindi la cifratura del volume protegge la
+sessione WhatsApp, che e' la parte che non si puo' rigenerare.
+
+## Migrare senza riabbinare
+
+La sessione e i token degli utenti sono cio' che rende un container *quel*
+container. Spostarli su un'altra macchina e' un export e un restore: il telefono
+non riscanna il codice QR.
+
+```bash
+# macchina vecchia
+node tools/backup.js export whatsapp-backup.tar
+
+# macchina nuova: stesso .env, poi
+node tools/backup.js restore whatsapp-backup.tar
+docker compose up -d
+```
+
+L'archivio contiene `/data/storages` (la sessione) e `/data/users.json` (gli hash
+dei token). Lo costruisce il container, quindi non importa dove Docker tiene il
+volume. Ferma il container prima del restore: scompattare file sotto un processo
+acceso e' chiedere guai.
+
+## Condividere il server
+
+Un container puo' ospitare piu' di un account: ogni utente ha un device GOWA
+suo, creato al primo handshake, e il token e' cio' che decide quale e' il suo.
+Metti `AUTH_REQUIRED=on` e dai a ogni telefono il suo token
+(`docker exec whatsapp-for-wp8 node /opt/adapter/create-user.js <nome>`); con
+l'interruttore spento non cambia niente e l'istanza resta privata.
+
+Due cose restano vere e vale la pena dirle: chi gestisce il server puo'
+tecnicamente arrivare alle sessioni sulla macchina, quindi il token separa gli
+utenti e non l'accesso di chi amministra; e il trasporto e' cifrato dal cifrario
+dell'app con la passphrase compilata dentro, che e' cio' che protegge il
+traffico su un tunnel pubblico.
+
 ## Disclosure
 
 Questo e' un client non ufficiale. Non e' affiliato, approvato o collegato a
