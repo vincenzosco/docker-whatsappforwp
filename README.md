@@ -247,8 +247,22 @@ bore.pub grants the requested port when it is free, so the address in the
 `whatsappforwp-endpoint` repository survives a restart or a reboot and there is
 nothing to publish. When the port has been taken by somebody else in the
 meantime, the service falls back to a random one instead of exiting - the phone
-is never left with an address that answers nothing - and its log repeats the new
-address with the command that publishes it:
+is never left with an address that answers nothing.
+
+The container then publishes that new address by itself, so nobody has to notice
+it changed. Put a `GH_TOKEN` in `.env` with write access to the endpoint
+repository and the tunnel writes the address there from inside Docker, through
+the GitHub CLI the image carries:
+
+```bash
+GH_TOKEN=github_pat_...
+docker logs whatsapp-bore | grep '\[publish\]'
+```
+
+The token is the only credential in the stack and it stays in `.env`, which is
+not committed. Leave it empty and the tunnel still works: the address is simply
+not republished, and the log prints the command to do it where the endpoint
+repository is cloned.
 
 ```bash
 docker logs whatsapp-bore | grep 'public address'
@@ -256,8 +270,7 @@ node publish.js --host bore.pub --port <port> --commit
 ```
 
 `TUNNEL_PORT=0` asks for nothing and takes whatever the server has, which is what
-a random tunnel used to be. The tunnel holds no credential: publishing the
-address stays a deliberate step, done where the endpoint repository is cloned.
+a random tunnel used to be.
 
 ## Sharing the server
 

@@ -6,8 +6,9 @@
 # asks for the one in TUNNEL_PORT every time it starts. That is what keeps the
 # address in the whatsappforwp-endpoint repository valid across a restart or a
 # reboot. When the port has been taken by somebody else in the meantime, the
-# service falls back to a random one instead of exiting, and its log repeats the
-# address together with the exact command that publishes it.
+# service falls back to a random one instead of exiting, and - with GH_TOKEN set
+# - republishes the new address by itself, so the phone finds the service
+# without anyone running publish.js.
 services:
   tunnel:
     image: ghcr.io/vincenzosco/docker-whatsappforwp-tunnel:latest
@@ -27,5 +28,10 @@ services:
       BRIDGE_PORT: ${BRIDGE_PORT:-8585}
       TUNNEL_SERVER: ${TUNNEL_SERVER:-bore.pub}
       TUNNEL_PORT: ${TUNNEL_PORT:-0}
+      ENDPOINT_AUTO_PUBLISH: ${ENDPOINT_AUTO_PUBLISH:-on}
+      ENDPOINT_REPO: ${ENDPOINT_REPO:-vincenzosco/whatsappforwp-endpoint}
+      # A GitHub token with write access to ENDPOINT_REPO. Empty keeps
+      # publishing manual; env_file (.env) supplies it when it is set there.
+      GH_TOKEN: ${GH_TOKEN:-}
     depends_on:
       - server

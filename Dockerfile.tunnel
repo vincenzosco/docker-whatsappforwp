@@ -14,9 +14,11 @@
 #     instead of exiting and leaving the phone with an address that answers
 #     nothing.
 #
-# It does not talk to GitHub and holds no credential: publishing the address is
-# still a deliberate step (see the README). What it removes is the reason the
-# address kept changing.
+# It also carries the GitHub CLI, so that the address it was given can be put in
+# the endpoint repository by the container itself. That is what makes the whole
+# thing unattended: when the preferred port has been taken and the address
+# changes, nobody has to notice and run publish.js. Without a GH_TOKEN nothing
+# is published and the address simply stays manual, as before.
 #
 # Built and published by .github/workflows/image.yml as
 # ghcr.io/vincenzosco/docker-whatsappforwp-tunnel.
@@ -36,7 +38,7 @@ LABEL org.opencontainers.image.title="whatsapp-for-wp8-tunnel" \
 # The release names its architectures x86_64/aarch64, the build names them
 # amd64/arm64: the two are not the same string, and the wrong one is a 404.
 RUN set -eux; \
-    apk add --no-cache ca-certificates curl; \
+    apk add --no-cache ca-certificates curl github-cli; \
     case "${TARGETARCH:-amd64}" in \
       amd64) arch="x86_64" ;; \
       arm64) arch="aarch64" ;; \
@@ -50,13 +52,16 @@ RUN set -eux; \
     bore --version
 
 COPY docker/tunnel-entrypoint.sh /usr/local/bin/tunnel-entrypoint.sh
-RUN chmod +x /usr/local/bin/tunnel-entrypoint.sh
+COPY docker/publish-endpoint.sh /usr/local/bin/publish-endpoint.sh
+RUN chmod +x /usr/local/bin/tunnel-entrypoint.sh /usr/local/bin/publish-endpoint.sh
 
 # TUNNEL_PORT is the port asked for first; 0 means "whatever the server has",
 # which is the old behaviour and is used only when the preferred one is taken.
 ENV BRIDGE_PORT=8585 \
     TUNNEL_SERVER=bore.pub \
-    TUNNEL_PORT=0
+    TUNNEL_PORT=0 \
+    ENDPOINT_AUTO_PUBLISH=on \
+    ENDPOINT_REPO=vincenzosco/whatsappforwp-endpoint
 
 # Host networking: bore has to reach the adapter on the machine itself, and a
 # bridge would put it on another network (see docker-compose.nas.yaml).

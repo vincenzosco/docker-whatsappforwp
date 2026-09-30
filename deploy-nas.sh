@@ -7,8 +7,9 @@
 # prints the exact command to run where the endpoint repository is cloned.
 #
 # The tunnel asks for TUNNEL_PORT first, so most restarts keep the same address
-# and there is nothing to publish; when it has to fall back to a random port, the
-# command below is what puts the new one in the repository.
+# and there is nothing to publish. When it has to fall back to a random port it
+# republishes the new address by itself, provided GH_TOKEN is set in .env; the
+# command below is then only the fallback for a deployment without a token.
 #
 # It does NOT touch any credential: the SSH password and the tokens stay where
 # you keep them.
@@ -59,7 +60,11 @@ fi
 
 echo "[deploy] public:      bore.pub:${port}"
 echo
-echo "[deploy] now publish it, from the machine that has the endpoint repository:"
-echo "         node publish.js --host bore.pub --port ${port} --commit"
-echo
-echo "[deploy] or run the GitHub Action 'endpoint' with host=bore.pub port=${port}"
+if grep -q '^GH_TOKEN=..' .env 2>/dev/null; then
+  echo "[deploy] GH_TOKEN is set: the tunnel publishes the address by itself."
+  echo "[deploy] confirm with: docker logs whatsapp-bore | grep '\[publish\]'"
+else
+  echo "[deploy] no GH_TOKEN: publish it, where the endpoint repository is cloned:"
+  echo "         node publish.js --host bore.pub --port ${port} --commit"
+  echo "         (or run the GitHub Action 'endpoint' with host=bore.pub port=${port})"
+fi

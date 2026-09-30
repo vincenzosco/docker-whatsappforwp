@@ -14,7 +14,8 @@
 #   listening at bore.pub:12345
 #
 # That line is the address the phone has to be given, so it is repeated at the
-# end with the exact command that publishes it.
+# end, and - when ENDPOINT_AUTO_PUBLISH is on and a GitHub token is present -
+# publish-endpoint.sh puts it in the endpoint repository without anyone asking.
 set -eu
 
 LOCAL_PORT="${BRIDGE_PORT:-8585}"
@@ -71,6 +72,13 @@ announce() {
   echo "[tunnel]   node publish.js --host ${SERVER} --port ${1} --commit"
 }
 
+# Republishing is not allowed to hold the tunnel up: the script runs in the
+# background, once per address, and its own failures are its own to report.
+publish() {
+  [ "${ENDPOINT_AUTO_PUBLISH:-on}" = "on" ] || return 0
+  publish-endpoint.sh "${1}" &
+}
+
 while : ; do
   started=0
   if [ "${PREFERRED}" != "0" ] && attempt "${PREFERRED}"; then
@@ -88,6 +96,7 @@ while : ; do
   address="$(address_of)"
   if [ -n "${address}" ]; then
     announce "${address}"
+    publish "${address}"
   fi
 
   # The tunnel stays in the foreground of this loop: when it closes - a network

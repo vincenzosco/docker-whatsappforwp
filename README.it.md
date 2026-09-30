@@ -251,8 +251,22 @@ bore.pub concede la porta richiesta quando e' libera, quindi l'indirizzo nel
 repository `whatsappforwp-endpoint` sopravvive a un riavvio del container o del
 NAS e non c'e' niente da pubblicare. Quando nel frattempo la porta e' stata presa
 da qualcun altro, il servizio ripiega su una casuale invece di uscire - al
-telefono non resta mai un indirizzo che non risponde - e il suo log ripete il
-nuovo indirizzo con il comando che lo pubblica:
+telefono non resta mai un indirizzo che non risponde.
+
+Il container pubblica poi quel nuovo indirizzo da solo, cosi' nessuno deve
+accorgersi che e' cambiato. Metti un `GH_TOKEN` in `.env` con accesso in
+scrittura al repository dell'endpoint e il tunnel scrive li' l'indirizzo da
+dentro Docker, tramite la GitHub CLI che l'immagine porta con se':
+
+```bash
+GH_TOKEN=github_pat_...
+docker logs whatsapp-bore | grep '\[publish\]'
+```
+
+Il token e' l'unica credenziale dello stack e resta in `.env`, che non e'
+versionato. Lascialo vuoto e il tunnel funziona comunque: l'indirizzo
+semplicemente non viene ripubblicato, e il log stampa il comando per farlo dove
+e' clonato il repository dell'endpoint.
 
 ```bash
 docker logs whatsapp-bore | grep 'public address'
@@ -260,9 +274,7 @@ node publish.js --host bore.pub --port <port> --commit
 ```
 
 `TUNNEL_PORT=0` non chiede niente e prende quello che il server ha, che e' come
-funzionava un tunnel casuale. Il tunnel non tiene nessuna credenziale: pubblicare
-l'indirizzo resta un passo deliberato, fatto dove e' clonato il repository
-dell'endpoint.
+funzionava un tunnel casuale.
 
 ## Condividere il server
 
