@@ -269,6 +269,15 @@ docker logs whatsapp-bore | grep 'public address'
 node publish.js --host bore.pub --port <port> --commit
 ```
 
+There is one more failure worth handling, because it fooled us: bore.pub can drop
+a reservation while the container still shows it as connected, so the address
+answers nothing although everything looks up - from the phone that is
+"connection refused", with no warning anywhere. The tunnel therefore dials its
+own public address every `HEALTH_INTERVAL` seconds and, after two silent
+failures, reopens on a fresh registration. The probe is a round trip through the
+router, which needs NAT loopback; where the network does not have it the first
+probe fails and the checks turn themselves off for that run.
+
 `TUNNEL_PORT=0` asks for nothing and takes whatever the server has, which is what
 a random tunnel used to be.
 

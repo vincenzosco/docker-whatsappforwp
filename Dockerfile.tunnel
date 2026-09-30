@@ -61,7 +61,9 @@ ENV BRIDGE_PORT=8585 \
     TUNNEL_SERVER=bore.pub \
     TUNNEL_PORT=0 \
     ENDPOINT_AUTO_PUBLISH=on \
-    ENDPOINT_REPO=vincenzosco/whatsappforwp-endpoint
+    ENDPOINT_REPO=vincenzosco/whatsappforwp-endpoint \
+    HEALTH_CHECK=on \
+    HEALTH_INTERVAL=60
 
 # Host networking: bore has to reach the adapter on the machine itself, and a
 # bridge would put it on another network (see docker-compose.nas.yaml).

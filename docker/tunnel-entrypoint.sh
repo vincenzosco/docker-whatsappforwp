@@ -27,7 +27,17 @@ LOG=/tmp/bore.log
 # bore is a child of this script, and this script is the container's process 1:
 # without this, `docker stop` waits for the timeout and then kills everything.
 pid=""
-trap 'trap - TERM INT; [ -n "${pid}" ] && kill "${pid}" 2>/dev/null; exit 0' TERM INT
+
+# The pipeline is `bore | tee`, so the pid kept above is tee's. Killing tee is
+# not enough on its own when bore has nothing left to write: name it too, or a
+# replacement tunnel ends up fighting the old one for the same port.
+stop_bore() {
+  [ -n "${pid}" ] && kill "${pid}" 2>/dev/null
+  pkill -f 'bore local' 2>/dev/null
+  return 0
+}
+
+trap 'trap - TERM INT; stop_bore; exit 0' TERM INT
 
 address_of() {
   sed -n 's/.*[Ll]istening [ao][nt] [^:]*:\([0-9][0-9]*\).*/\1/p' "${LOG}" | tail -1
@@ -79,6 +89,37 @@ publish() {
   publish-endpoint.sh "${1}" &
 }
 
+# A public address that answers nothing is exactly what the phone reports as
+# "connection refused", and bore.pub can drop a reservation it still shows as
+# connected - which is what left the endpoint pointing at a dead port until
+# somebody restarted the tunnel. Dialling the public address is the only way to
+# notice from here. It is a round trip through the router, which not every
+# network allows (no NAT loopback), so a first probe that fails switches the
+# checks off for the run instead of restarting a tunnel that is probably fine.
+probe() {
+  nc -z -w 8 "${SERVER}" "${1}" >/dev/null 2>&1
+}
+
+watch() {
+  address="${1}"
+  failures=0
+  while kill -0 "${pid}" 2>/dev/null; do
+    sleep "${HEALTH_INTERVAL:-60}"
+    kill -0 "${pid}" 2>/dev/null || return 0
+    if probe "${address}"; then
+      failures=0
+    else
+      failures=$((failures + 1))
+      echo "[tunnel] ${SERVER}:${address} did not answer (${failures})"
+      if [ "${failures}" -ge 2 ]; then
+        echo "[tunnel] reopening the tunnel on a fresh registration"
+        stop_bore
+        return 0
+      fi
+    fi
+  done
+}
+
 while : ; do
   started=0
   if [ "${PREFERRED}" != "0" ] && attempt "${PREFERRED}"; then
@@ -97,6 +138,13 @@ while : ; do
   if [ -n "${address}" ]; then
     announce "${address}"
     publish "${address}"
+    if [ "${HEALTH_CHECK:-on}" = "on" ]; then
+      if probe "${address}"; then
+        watch "${address}" &
+      else
+        echo "[tunnel] the public address does not answer a probe from here (no NAT loopback): health checks off for this run"
+      fi
+    fi
   fi
 
   # The tunnel stays in the foreground of this loop: when it closes - a network

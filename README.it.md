@@ -273,6 +273,16 @@ docker logs whatsapp-bore | grep 'public address'
 node publish.js --host bore.pub --port <port> --commit
 ```
 
+C'e' un altro guasto che vale la pena gestire, perche' ci ha ingannati: bore.pub
+puo' lasciar cadere una prenotazione mentre il container la mostra ancora
+attiva, quindi l'indirizzo non risponde a niente pur sembrando tutto a posto -
+dal telefono e' "connection refused", senza alcun avviso da nessuna parte. Il
+tunnel allora contatta il proprio indirizzo pubblico ogni `HEALTH_INTERVAL`
+secondi e, dopo due fallimenti di fila, riapre con una registrazione nuova. La
+sonda e' un giro attraverso il router, che richiede NAT loopback; dove la rete
+non ce l'ha la prima sonda fallisce e i controlli si spengono da soli per quel
+giro.
+
 `TUNNEL_PORT=0` non chiede niente e prende quello che il server ha, che e' come
 funzionava un tunnel casuale.
 
