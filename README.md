@@ -180,7 +180,9 @@ The `sync` job of the CI workflow checks out that exact commit of the app
 repository, runs `--check`, and fails the build if the copy no longer matches.
 A successful build publishes to GHCR as
 `ghcr.io/vincenzosco/docker-whatsappforwp:latest` (plus `:sha-...` and
-`:app-<commit>`).
+`:app-<commit>`). A second, independent job builds `Dockerfile.tunnel` and
+publishes it as `ghcr.io/vincenzosco/docker-whatsappforwp-tunnel:latest` (see
+"The tunnel to bore.pub" below).
 
 ## Encryption at rest
 
@@ -228,6 +230,34 @@ The archive holds `/data/storages` (the session) and `/data/users.json` (the
 token hashes). It is built by the container, so it does not matter where Docker
 keeps the volume. Stop the container before a restore: unpacking files under a
 live process is asking for trouble.
+
+## The tunnel to bore.pub
+
+`docker-compose.nas.yaml` adds a second service that exposes the adapter on
+`bore.pub`, for a machine that is not reachable from outside. It is not the
+pinned `ekzhang/bore` image but a small image of ours around the same binary:
+the tunnel has to be told which public port to ask for, and it has to be able to
+fall back when that port is gone.
+
+```bash
+TUNNEL_PORT=41417
+```
+
+bore.pub grants the requested port when it is free, so the address in the
+`whatsappforwp-endpoint` repository survives a restart or a reboot and there is
+nothing to publish. When the port has been taken by somebody else in the
+meantime, the service falls back to a random one instead of exiting - the phone
+is never left with an address that answers nothing - and its log repeats the new
+address with the command that publishes it:
+
+```bash
+docker logs whatsapp-bore | grep 'public address'
+node publish.js --host bore.pub --port <port> --commit
+```
+
+`TUNNEL_PORT=0` asks for nothing and takes whatever the server has, which is what
+a random tunnel used to be. The tunnel holds no credential: publishing the
+address stays a deliberate step, done where the endpoint repository is cloned.
 
 ## Sharing the server
 

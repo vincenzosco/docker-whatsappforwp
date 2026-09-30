@@ -183,7 +183,10 @@ node tools/sync.js --check --from ../WhatsappForWP
 Il job `sync` della CI fa il checkout di quel commit esatto del repository dell'app,
 lancia `--check` e ferma la build se la copia non combacia piu'. Una build riuscita
 pubblica su GHCR come `ghcr.io/vincenzosco/docker-whatsappforwp:latest` (piu'
-`:sha-...` e `:app-<commit>`).
+`:sha-...` e `:app-<commit>`). Un secondo job indipendente costruisce
+`Dockerfile.tunnel` e lo pubblica come
+`ghcr.io/vincenzosco/docker-whatsappforwp-tunnel:latest` (vedi "Il tunnel verso
+bore.pub" qui sotto).
 
 ## Cifratura a riposo
 
@@ -231,6 +234,35 @@ L'archivio contiene `/data/storages` (la sessione) e `/data/users.json` (gli has
 dei token). Lo costruisce il container, quindi non importa dove Docker tiene il
 volume. Ferma il container prima del restore: scompattare file sotto un processo
 acceso e' chiedere guai.
+
+## Il tunnel verso bore.pub
+
+`docker-compose.nas.yaml` aggiunge un secondo servizio che espone l'adapter su
+`bore.pub`, per una macchina non raggiungibile dall'esterno. Non e' l'immagine
+bloccata `ekzhang/bore` ma una nostra immagine piccola intorno allo stesso
+binario: al tunnel va detto quale porta pubblica chiedere, e deve poter ripiegare
+quando quella porta non c'e' piu'.
+
+```bash
+TUNNEL_PORT=41417
+```
+
+bore.pub concede la porta richiesta quando e' libera, quindi l'indirizzo nel
+repository `whatsappforwp-endpoint` sopravvive a un riavvio del container o del
+NAS e non c'e' niente da pubblicare. Quando nel frattempo la porta e' stata presa
+da qualcun altro, il servizio ripiega su una casuale invece di uscire - al
+telefono non resta mai un indirizzo che non risponde - e il suo log ripete il
+nuovo indirizzo con il comando che lo pubblica:
+
+```bash
+docker logs whatsapp-bore | grep 'public address'
+node publish.js --host bore.pub --port <port> --commit
+```
+
+`TUNNEL_PORT=0` non chiede niente e prende quello che il server ha, che e' come
+funzionava un tunnel casuale. Il tunnel non tiene nessuna credenziale: pubblicare
+l'indirizzo resta un passo deliberato, fatto dove e' clonato il repository
+dell'endpoint.
 
 ## Condividere il server
 

@@ -3,9 +3,12 @@
 # publish.
 #
 # Run it on the NAS, from the directory that holds docker-compose.yaml and your
-# .env. It starts the container and the bore tunnel, then reads the port bore
-# was given and prints the exact command to run where the endpoint repository
-# is cloned.
+# .env. It starts the container and the tunnel, then reads the public address and
+# prints the exact command to run where the endpoint repository is cloned.
+#
+# The tunnel asks for TUNNEL_PORT first, so most restarts keep the same address
+# and there is nothing to publish; when it has to fall back to a random port, the
+# command below is what puts the new one in the repository.
 #
 # It does NOT touch any credential: the SSH password and the tokens stay where
 # you keep them.
@@ -36,10 +39,14 @@ fi
 
 $COMPOSE up -d
 
-# bore prints its address once, on startup: "Listening on bore.pub:12345".
-# Give it a moment, then read the last one.
+# The tunnel prints its address once, on startup: "[tunnel] public address:
+# bore.pub:12345". Give it a moment, then read the last one, and fall back to
+# bore's own "listening at" line for a container started from the old image.
 sleep 8
-port=$(docker logs whatsapp-bore 2>&1 | sed -n 's/.*bore\.pub:\([0-9][0-9]*\).*/\1/p' | tail -1)
+port=$(docker logs whatsapp-bore 2>&1 | sed -n 's/.*public address: [^:]*:\([0-9][0-9]*\).*/\1/p' | tail -1)
+if [ -z "${port:-}" ]; then
+  port=$(docker logs whatsapp-bore 2>&1 | sed -n 's/.*bore\.pub:\([0-9][0-9]*\).*/\1/p' | tail -1)
+fi
 
 echo
 echo "[deploy] container:   $(docker ps --filter name=whatsapp-for-wp8 --format '{{.Status}}')"
