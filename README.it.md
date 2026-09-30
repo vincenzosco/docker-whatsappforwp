@@ -143,6 +143,25 @@ docker compose down -v
 
 Cancella la sessione, e al prossimo avvio serve un nuovo codice QR.
 
+## Quando il ciclo di login dice `reconnect error`
+
+GOWA dialoga con `https://web.whatsapp.com/ws/chat` in TLS. Senza un archivio di
+certificati dentro il container quella chiamata fallisce con `x509: certificate
+signed by unknown authority`, il ciclo di login risponde `reconnect error` e ogni
+connessione dal telefono viene chiusa appena si apre. L'immagine installa
+`ca-certificates` proprio per questo; una build che l'ha perso e' la prima cosa da
+controllare:
+
+```bash
+docker exec whatsapp-for-wp8 ls -l /etc/ssl/certs/ca-certificates.crt
+docker logs whatsapp-for-wp8 | grep -i "certificate signed by unknown authority"
+```
+
+Da sapere: GOWA cancella la sessione di un dispositivo che non riesce a usare.
+Dopo una lunga serie di questi errori la sessione WhatsApp non c'e' piu' e al
+prossimo avvio serve un nuovo codice QR, che e' quello che serve la schermata QR
+dell'app.
+
 ## Come viene costruita l'immagine
 
 Due stadi. Il primo scarica l'archivio della release GOWA bloccata per
