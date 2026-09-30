@@ -52,8 +52,12 @@ WORKDIR /data
 # the adapter converts it to a small mono MP3 before sending it to the app.
 # Without ffmpeg the voice note still arrives but cannot play; the image ships
 # it so that it does, with no step on the host.
+# ca-certificates is not a detail: the node slim base image has no trust store,
+# and GOWA dials https://web.whatsapp.com/ws/chat over TLS. Without it every dial
+# fails with "x509: certificate signed by unknown authority", the login loop
+# answers "reconnect error" and the phone is dropped as soon as it connects.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=gowa /gowa/whatsapp /usr/local/bin/whatsapp
