@@ -217,9 +217,12 @@ acceso e' chiedere guai.
 
 Un container puo' ospitare piu' di un account: ogni utente ha un device GOWA
 suo, creato al primo handshake, e il token e' cio' che decide quale e' il suo.
-Metti `AUTH_REQUIRED=on` e dai a ogni telefono il suo token
-(`docker exec whatsapp-for-wp8 node /opt/adapter/create-user.js <nome>`); con
-l'interruttore spento non cambia niente e l'istanza resta privata.
+Metti `AUTH_REQUIRED=on` e basta: con `AUTH_REGISTER=on` (il valore predefinito)
+un telefono che si collega senza token ne riceve uno sul momento, quindi nell'app
+non c'e' niente da digitare oltre all'interruttore. Un servizio che deve restare
+chiuso mette `AUTH_REGISTER=off` e consegna i token a mano (`docker exec
+whatsapp-for-wp8 node /opt/adapter/create-user.js <nome>`); con
+`AUTH_REQUIRED` spento non cambia niente e l'istanza resta privata.
 
 Due cose restano vere e vale la pena dirle: chi gestisce il server puo'
 tecnicamente arrivare alle sessioni sulla macchina, quindi il token separa gli

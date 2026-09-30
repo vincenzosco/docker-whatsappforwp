@@ -216,9 +216,12 @@ live process is asking for trouble.
 
 One container can host more than one account: every user gets a GOWA device of
 their own, created on the first handshake, and the token is what decides which
-one is theirs. Set `AUTH_REQUIRED=on` and give each phone its token
-(`docker exec whatsapp-for-wp8 node /opt/adapter/create-user.js <name>`); with
-the switch off, nothing changes and the instance stays private.
+one is theirs. Set `AUTH_REQUIRED=on` and that is the whole job: with
+`AUTH_REGISTER=on` (the default) a phone that connects without a token is given
+one on the spot, so the app needs nothing typed in but the switch. A service that
+must stay closed sets `AUTH_REGISTER=off` and hands the tokens out with
+`docker exec whatsapp-for-wp8 node /opt/adapter/create-user.js <name>`; with
+`AUTH_REQUIRED=off` nothing changes and the instance stays private.
 
 Two things stay true and are worth saying: the operator can technically reach
 the sessions on the machine, so the token separates users, not the operator's
